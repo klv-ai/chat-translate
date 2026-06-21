@@ -32,12 +32,7 @@ export type LanguageCode = string;
  * make DeepL *error* on languages that don't support formality, whereas
  * "prefer_*" silently no-ops — much friendlier for a mixed-language room.
  */
-export type Formality =
-  | 'default'
-  | 'more'
-  | 'less'
-  | 'prefer_more'
-  | 'prefer_less';
+export type Formality = 'default' | 'more' | 'less' | 'prefer_more' | 'prefer_less';
 
 export interface TranslateOptions {
   /** Omit / null = let the provider auto-detect — IF capabilities allow it. */
@@ -106,10 +101,7 @@ export interface TranslationProvider {
   readonly name: string;
   capabilities(): ProviderCapabilities;
   translate(text: string, options: TranslateOptions): Promise<TranslateResult>;
-  translateBatch(
-    texts: string[],
-    options: TranslateOptions,
-  ): Promise<TranslateResult[]>;
+  translateBatch(texts: string[], options: TranslateOptions): Promise<TranslateResult[]>;
   /** Cheap liveness probe — matters far more for the self-hosted path. */
   healthCheck(): Promise<boolean>;
 }
@@ -124,16 +116,10 @@ export interface TranslationProvider {
 export abstract class BaseTranslationProvider implements TranslationProvider {
   abstract readonly name: string;
   abstract capabilities(): ProviderCapabilities;
-  abstract translate(
-    text: string,
-    options: TranslateOptions,
-  ): Promise<TranslateResult>;
+  abstract translate(text: string, options: TranslateOptions): Promise<TranslateResult>;
   abstract healthCheck(): Promise<boolean>;
 
-  async translateBatch(
-    texts: string[],
-    options: TranslateOptions,
-  ): Promise<TranslateResult[]> {
+  async translateBatch(texts: string[], options: TranslateOptions): Promise<TranslateResult[]> {
     const out: TranslateResult[] = [];
     for (const t of texts) out.push(await this.translate(t, options));
     return out;
@@ -159,8 +145,7 @@ export class DeepLProvider extends BaseTranslationProvider {
     // Free keys end in ":fx" and must hit the free host.
     const isFree = config.apiKey.endsWith(':fx');
     this.endpoint =
-      config.apiUrl ??
-      (isFree ? 'https://api-free.deepl.com/v2' : 'https://api.deepl.com/v2');
+      config.apiUrl ?? (isFree ? 'https://api-free.deepl.com/v2' : 'https://api.deepl.com/v2');
   }
 
   capabilities(): ProviderCapabilities {
@@ -174,19 +159,13 @@ export class DeepLProvider extends BaseTranslationProvider {
     };
   }
 
-  async translate(
-    text: string,
-    options: TranslateOptions,
-  ): Promise<TranslateResult> {
+  async translate(text: string, options: TranslateOptions): Promise<TranslateResult> {
     const [r] = await this.translateBatch([text], options);
     return r;
   }
 
   // Real batch: one round-trip translates many texts to a single target.
-  async translateBatch(
-    texts: string[],
-    options: TranslateOptions,
-  ): Promise<TranslateResult[]> {
+  async translateBatch(texts: string[], options: TranslateOptions): Promise<TranslateResult[]> {
     const body: Record<string, unknown> = {
       text: texts,
       target_lang: options.targetLang,
@@ -263,7 +242,7 @@ export class TranslateGemmaProvider extends BaseTranslationProvider {
   constructor(config: TranslateGemmaConfig = {}) {
     super();
     this.host = config.host ?? 'http://localhost:11434';
-    this.model = config.model ?? 'translategemma:12b';
+    this.model = config.model ?? 'translategemma:4b';
   }
 
   capabilities(): ProviderCapabilities {
@@ -280,10 +259,7 @@ export class TranslateGemmaProvider extends BaseTranslationProvider {
     };
   }
 
-  async translate(
-    text: string,
-    options: TranslateOptions,
-  ): Promise<TranslateResult> {
+  async translate(text: string, options: TranslateOptions): Promise<TranslateResult> {
     if (!options.sourceLang) {
       // Fail loudly rather than guess silently. capabilities() already told
       // the caller this backend can't auto-detect, so a missing sourceLang
@@ -391,9 +367,7 @@ export function createProvider(config: DeploymentConfig): TranslationProvider {
     case 'translategemma':
       return new TranslateGemmaProvider(config.translategemma ?? {});
     default:
-      throw new Error(
-        `unknown translation provider: ${(config as { provider: string }).provider}`,
-      );
+      throw new Error(`unknown translation provider: ${(config as { provider: string }).provider}`);
   }
 }
 

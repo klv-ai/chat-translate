@@ -31,13 +31,13 @@
  * Runtime: Node 18+. The detector is injected (e.g. ELD via eldDetector).
  */
 
-import { maskNonTranslatable, DEFAULT_RULES } from './chat-translation-layer';
+import { DEFAULT_RULES, maskNonTranslatable } from './chat-translation-layer';
 import {
-  resolveSource,
-  letterCount,
   type ConfidenceDetector,
   type DetectionResult,
+  letterCount,
   type ResolveSourceOptions,
+  resolveSource,
 } from './resolve-source';
 import type { LanguageCode } from './translation-provider';
 
@@ -279,9 +279,9 @@ export async function sweepPolicies(
           det.reliable &&
           (opts.minScore === undefined || (det.score ?? 0) >= opts.minScore);
         const short = letterCount(di) < shortTextLetters;
-        if (reliable && short && !sameLang(det.lang!, uiLang)) {
+        if (reliable && short && det.lang !== null && !sameLang(det.lang, uiLang)) {
           cell.shortDisagree++;
-          if (sameLang(det.lang!, c.sourceLang)) cell.shortDisagreeDetectorRight++;
+          if (sameLang(det.lang, c.sourceLang)) cell.shortDisagreeDetectorRight++;
           if (sameLang(uiLang, c.sourceLang)) cell.shortDisagreePriorRight++;
         }
       }

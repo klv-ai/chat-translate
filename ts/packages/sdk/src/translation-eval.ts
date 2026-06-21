@@ -45,19 +45,19 @@
  */
 
 import {
-  type TranslationProvider,
-  type LanguageCode,
-  type Formality,
-  type TranslateOptions,
-  BaseTranslationProvider,
-  type ProviderCapabilities,
-  TranslationError,
-} from './translation-provider';
-import {
-  maskNonTranslatable,
   DEFAULT_RULES,
   type LanguageDetector,
+  maskNonTranslatable,
 } from './chat-translation-layer';
+import {
+  BaseTranslationProvider,
+  type Formality,
+  type LanguageCode,
+  type ProviderCapabilities,
+  type TranslateOptions,
+  TranslationError,
+  type TranslationProvider,
+} from './translation-provider';
 
 // ─────────────────────────────────────────────────────────────
 // 1. A llama.cpp / GGUF backend (Q8, BF16, …) for the eval
@@ -106,7 +106,7 @@ export class LlamaCppTranslateGemmaProvider extends BaseTranslationProvider {
     super();
     this.host = config.host ?? 'http://localhost:8080';
     this.model = config.model ?? 'translategemma';
-    this.name = `translategemma-gguf${config.quantLabel ? '-' + config.quantLabel : ''}`;
+    this.name = `translategemma-gguf${config.quantLabel ? `-${config.quantLabel}` : ''}`;
   }
 
   capabilities(): ProviderCapabilities {
@@ -363,17 +363,14 @@ export async function runEval(
     const caps = cand.provider.capabilities();
     const concurrency = cand.maxConcurrency ?? (caps.nativeBatch ? 8 : 1);
     const formality: Formality | undefined = caps.formality
-      ? options.formality ?? 'prefer_less'
+      ? (options.formality ?? 'prefer_less')
       : undefined;
 
     const results: CaseResult[] = [];
     const candStart = Date.now();
 
     const tasks = cases.map((c) => async () => {
-      const { masked, restore, findUnrestored, tokenCount } = maskNonTranslatable(
-        c.text,
-        rules,
-      );
+      const { masked, restore, findUnrestored, tokenCount } = maskNonTranslatable(c.text, rules);
 
       // Resolve source: gold label first, then detector, else null (auto).
       let sourceLang: LanguageCode | null = c.sourceLang ?? null;
@@ -534,7 +531,7 @@ export function formatReportMarkdown(report: EvalReport): string {
  *   const report = await runEval(cases, [
  *     { label: 'deepl', provider: new DeepLProvider({ apiKey: process.env.DEEPL_API_KEY! }),
  *       costPerMillionChars: 25, notes: 'Pro' },
- *     { label: 'tg-q4', provider: new TranslateGemmaProvider({ model: 'translategemma:12b' }),
+ *     { label: 'tg-q4', provider: new TranslateGemmaProvider({ model: 'translategemma:4b' }),
  *       notes: 'Q4_K_M via Ollama' },
  *     { label: 'tg-q8', provider: new LlamaCppTranslateGemmaProvider({ host: 'http://localhost:8080', quantLabel: 'Q8_0' }),
  *       notes: 'Q8_0 GGUF via llama.cpp' },

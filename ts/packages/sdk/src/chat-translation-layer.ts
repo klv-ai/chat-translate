@@ -21,11 +21,11 @@
  */
 
 import {
-  type TranslationProvider,
-  type TranslateOptions,
-  type LanguageCode,
   type Formality,
+  type LanguageCode,
+  type TranslateOptions,
   TranslationError,
+  type TranslationProvider,
 } from './translation-provider';
 
 // ─────────────────────────────────────────────────────────────
@@ -68,10 +68,10 @@ export const DEFAULT_RULES: MaskRule[] = [
   { name: 'url', pattern: /\b(?:https?:\/\/|www\.)[^\s<]+/gi, trimTrailingPunct: true },
   // @mention / #channel: only when preceded by whitespace or start-of-string,
   // so we don't eat the "@" inside an email or a mid-word "#".
-  { name: 'mention', pattern: /(?<![^\s])@[\w.\-]+/g },
-  { name: 'channel', pattern: /(?<![^\s])#[\w\-]+/g },
+  { name: 'mention', pattern: /(?<![^\s])@[\w.-]+/g },
+  { name: 'channel', pattern: /(?<![^\s])#[\w-]+/g },
   // :shortcode: emoji (Slack/Discord style) — literal text, never translate.
-  { name: 'shortcode_emoji', pattern: /:[a-z0-9_+\-]+:/gi },
+  { name: 'shortcode_emoji', pattern: /:[a-z0-9_+-]+:/gi },
   // Unicode emoji (approximate: base pictographic + modifiers/ZWJ, or flags).
   // Keycap sequences (1️⃣) and a few exotic combos are edge cases.
   {
@@ -97,10 +97,7 @@ export interface MaskedMessage {
  * fan-out layer will reuse the single masked form across every target
  * language and only re-run restore() per viewer.
  */
-export function maskNonTranslatable(
-  raw: string,
-  rules: MaskRule[] = DEFAULT_RULES,
-): MaskedMessage {
+export function maskNonTranslatable(raw: string, rules: MaskRule[] = DEFAULT_RULES): MaskedMessage {
   // Defensive: drop any pre-existing sentinels so user input can't collide.
   let work = raw.replace(/[\uE000\uE001]/g, '');
   const tokens: string[] = [];
@@ -123,10 +120,7 @@ export function maskNonTranslatable(
   }
 
   const restore = (translated: string): string =>
-    translated.replace(
-      /\uE000(\d+)\uE001/g,
-      (_, d: string) => tokens[Number(d)] ?? '',
-    );
+    translated.replace(/\uE000(\d+)\uE001/g, (_, d: string) => tokens[Number(d)] ?? '');
 
   const findUnrestored = (translated: string): number[] => {
     const seen = new Set<number>();

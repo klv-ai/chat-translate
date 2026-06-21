@@ -31,14 +31,14 @@
  * injected (kept at the edge so the buffer/logger stay dependency-free).
  */
 
-import type { LanguageCode } from './translation-provider';
 import type {
   ResolvedSource,
-  SourceProvenance,
-  ShortTextPolicy,
   ResolveSourceOptions,
+  ShortTextPolicy,
+  SourceProvenance,
 } from './resolve-source';
 import { DEFAULT_SHORT_TEXT_LETTERS, DEFAULT_SHORT_TEXT_POLICY } from './resolve-source';
+import type { LanguageCode } from './translation-provider';
 
 // ─────────────────────────────────────────────────────────────
 // 1. Event shapes
@@ -143,9 +143,7 @@ export interface EventSink {
 // ─────────────────────────────────────────────────────────────
 
 /** Given the resolution (sans sampleRate), return keep-probability in [0,1]. */
-export type ResolutionSampler = (
-  e: Omit<SourceResolutionEvent, 'sampleRate'>,
-) => number;
+export type ResolutionSampler = (e: Omit<SourceResolutionEvent, 'sampleRate'>) => number;
 
 /**
  * Default policy: keep everything interesting, thin only the easy bulk.
@@ -158,9 +156,7 @@ export type ResolutionSampler = (
 export function defaultResolutionSampler(easyKeepRate = 0.05): ResolutionSampler {
   return (e) => {
     const isEasyBulk =
-      e.confident &&
-      e.provenance === 'detected' &&
-      e.letterCount >= e.config.shortTextLetters;
+      e.confident && e.provenance === 'detected' && e.letterCount >= e.config.shortTextLetters;
     return isEasyBulk ? easyKeepRate : 1;
   };
 }
@@ -240,7 +236,11 @@ export class BufferingEvalLogger implements SourceEvalLogger {
   }
 
   stats(): EvalLoggerStats {
-    return { ...this.s, bufferedResolutions: this.res.length, bufferedCorrections: this.corr.length };
+    return {
+      ...this.s,
+      bufferedResolutions: this.res.length,
+      bufferedCorrections: this.corr.length,
+    };
   }
 
   async close(): Promise<void> {
@@ -259,8 +259,10 @@ export class BufferingEvalLogger implements SourceEvalLogger {
     if (this.flushing) return;
     if (this.res.length === 0 && this.corr.length === 0) return;
     this.flushing = true;
-    const res = this.res; this.res = [];
-    const corr = this.corr; this.corr = [];
+    const res = this.res;
+    this.res = [];
+    const corr = this.corr;
+    this.corr = [];
     try {
       if (res.length) await this.sink.writeResolutions(res);
       if (corr.length) await this.sink.writeCorrections(corr);
@@ -278,8 +280,12 @@ export const NoopEvalLogger: SourceEvalLogger = {
   recordResolution() {},
   recordCorrection() {},
   stats: () => ({
-    bufferedResolutions: 0, bufferedCorrections: 0, sampledOut: 0,
-    droppedFull: 0, droppedFlushError: 0, flushes: 0,
+    bufferedResolutions: 0,
+    bufferedCorrections: 0,
+    sampledOut: 0,
+    droppedFull: 0,
+    droppedFlushError: 0,
+    flushes: 0,
   }),
   close: async () => {},
 };
@@ -400,10 +406,21 @@ export class PgEventSink implements EventSink {
     const tuples = rows.map((r, i) => {
       const b = i * cols;
       values.push(
-        r.messageId, new Date(r.at), r.maskedDetectInput, r.uiLang, r.letterCount,
-        r.lang, r.provenance, r.confident, r.detected ?? null, r.score ?? null,
-        r.config.shortTextLetters, r.config.shortTextPolicy, r.config.minScore ?? null,
-        r.config.detectorId, r.sampleRate,
+        r.messageId,
+        new Date(r.at),
+        r.maskedDetectInput,
+        r.uiLang,
+        r.letterCount,
+        r.lang,
+        r.provenance,
+        r.confident,
+        r.detected ?? null,
+        r.score ?? null,
+        r.config.shortTextLetters,
+        r.config.shortTextPolicy,
+        r.config.minScore ?? null,
+        r.config.detectorId,
+        r.sampleRate,
       );
       return `(${Array.from({ length: cols }, (_, k) => `$${b + k + 1}`).join(',')})`;
     });

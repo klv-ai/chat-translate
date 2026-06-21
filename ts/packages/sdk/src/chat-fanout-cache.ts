@@ -24,17 +24,17 @@
  */
 
 import {
-  maskNonTranslatable,
   DEFAULT_RULES,
   type LanguageDetector,
-  type ViewerTranslation,
+  maskNonTranslatable,
   type ViewerTranslateOptions,
+  type ViewerTranslation,
 } from './chat-translation-layer';
 import {
-  type TranslationProvider,
-  type LanguageCode,
   type Formality,
+  type LanguageCode,
   TranslationError,
+  type TranslationProvider,
 } from './translation-provider';
 
 // ─────────────────────────────────────────────────────────────
@@ -56,9 +56,7 @@ export interface CachedTranslation {
  * anything else. Sync or async both satisfy the interface.
  */
 export interface TranslationCache {
-  get(
-    key: string,
-  ): Promise<CachedTranslation | undefined> | CachedTranslation | undefined;
+  get(key: string): Promise<CachedTranslation | undefined> | CachedTranslation | undefined;
   set(key: string, value: CachedTranslation): Promise<void> | void;
 }
 
@@ -256,7 +254,7 @@ export function createRoomTranslator(
 
     // Formality is target-independent — resolve once for the call AND the key.
     const formality: Formality | undefined = caps.formality
-      ? opts.formality ?? defaultFormality
+      ? (opts.formality ?? defaultFormality)
       : undefined;
 
     // Short-circuit B: viewers already on the source language get the original.

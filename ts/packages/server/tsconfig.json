@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@chat-translate/sdk": ["../sdk/src/index.ts"],
+      "@chat-translate/sdk/detector": ["../sdk/src/detector.ts"],
+      "@chat-translate/sdk/eval": ["../sdk/src/eval.ts"],
+      "@chat-translate/sdk/eval/source": ["../sdk/src/eval-source.ts"],
+      "@chat-translate/sdk/logger": ["../sdk/src/logger.ts"]
+    }
+  },
+  "include": ["src", "test", "tsup.config.ts", "vitest.config.ts"]
+}

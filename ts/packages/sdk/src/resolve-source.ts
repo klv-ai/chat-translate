@@ -148,8 +148,12 @@ function sameLang(a: LanguageCode, b: LanguageCode): boolean {
   return a.split('-')[0].toLowerCase() === b.split('-')[0].toLowerCase();
 }
 
-/** Letters only — masked input has had mentions/URLs/emoji/code turned to spaces. */
-function letterCount(s: string): number {
+/**
+ * Letters only — masked input has had mentions/URLs/emoji/code turned to spaces.
+ * Exported because source-resolution-eval.ts reuses it to bin cases by length;
+ * it is a pure Unicode-letter counter with no side effects.
+ */
+export function letterCount(s: string): number {
   return (s.match(/\p{L}/gu) ?? []).length;
 }
 
@@ -176,30 +180,30 @@ export async function resolveSource(
   const det = await detector.detect(detectInput);
   const detected = det.lang ?? undefined;
   const passesScore = opts.minScore === undefined || (det.score ?? 0) >= opts.minScore;
-  const usable = det.lang !== null && det.reliable && passesScore;
-
-  // 3. Nothing usable → UI prior, flagged revisitable.
-  if (!usable) {
+  // 3. Nothing usable → UI prior, flagged revisitable. The guard also narrows
+  //    det.lang to a concrete code for everything below.
+  if (det.lang === null || !det.reliable || !passesScore) {
     return { lang: uiLang, provenance: 'ui_fallback', confident: false, detected };
   }
+  const lang = det.lang;
 
   // 4. Enough letters that we trust the detector outright (incl. when it
   //    overrides the prior — the German-UI user writing English).
   const threshold = opts.shortTextLetters ?? DEFAULT_SHORT_TEXT_LETTERS;
   if (letterCount(detectInput) >= threshold) {
-    return { lang: det.lang!, provenance: 'detected', confident: true, detected };
+    return { lang, provenance: 'detected', confident: true, detected };
   }
 
   // 5. Short input, loanword danger zone. A detection that corroborates the
   //    prior is trusted outright. On DISAGREEMENT the policy decides — but
   //    either branch marks confident:false so the row stays revisitable.
-  if (sameLang(det.lang!, uiLang)) {
-    return { lang: det.lang!, provenance: 'detected', confident: true, detected };
+  if (sameLang(lang, uiLang)) {
+    return { lang, provenance: 'detected', confident: true, detected };
   }
   const policy = opts.shortTextPolicy ?? DEFAULT_SHORT_TEXT_POLICY;
   if (policy === 'trust_detector') {
     // Took the detector's answer, but we're in the danger zone — not settled.
-    return { lang: det.lang!, provenance: 'detected', confident: false, detected };
+    return { lang, provenance: 'detected', confident: false, detected };
   }
   // prefer_prior: keep uiLang, record what the detector said for telemetry.
   return { lang: uiLang, provenance: 'ui_fallback', confident: false, detected };

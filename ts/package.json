@@ -1,0 +1,26 @@
+{
+  "name": "chat-translate",
+  "version": "0.1.0",
+  "description": "Monorepo: @chat-translate/sdk translation library + thin Fastify HTTP server.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter @chat-translate/server dev",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "clean": "pnpm -r clean",
+    "docker:build": "docker build -f packages/server/Dockerfile -t chat-translate-server .",
+    "docker:up": "docker compose up --build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.0"
+  }
+}

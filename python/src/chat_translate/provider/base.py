@@ -14,6 +14,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Literal
 
+from ..masking import DEFAULT_SENTINELS, Sentinels
+
 LanguageCode = str
 
 # Register / politeness control, mapping onto DeepL's `formality` parameter.
@@ -73,6 +75,14 @@ class TranslationError(Exception):
 class TranslationProvider(ABC):
     name: str
 
+    @property
+    def sentinels(self) -> Sentinels:
+        """Placeholder delimiter scheme this backend preserves through
+        translation. Defaults to the Private-Use-Area scheme (safe for NMT);
+        instruction-tuned LLM backends override it because their tokenizers eat
+        PUA code points."""
+        return DEFAULT_SENTINELS
+
     @abstractmethod
     def capabilities(self) -> ProviderCapabilities: ...
 
@@ -101,9 +111,14 @@ class BaseTranslationProvider(TranslationProvider):
 
 
 def build_translation_prompt(text: str, options: TranslateOptions) -> str:
-    """The TranslateGemma-style translation prompt shared by the self-hosted
-    backends (local GGUF + Ollama). The register hint is best-effort only —
-    which is exactly why those providers report ``formality=False``.
+    """A minimal, generic translation prompt for GGUFs whose chat template wraps
+    a plain user message. The register hint is best-effort only — which is why
+    those providers report ``formality=False``.
+
+    Instruction-tuned TranslateGemma models should use
+    :func:`build_instruction_tuned_prompt`, which follows the published model
+    card; the rich GGUF template builds that prompt itself from structured
+    content (see ``LocalInstructionTunedProvider``).
     """
     if options.formality in ("more", "prefer_more"):
         register = " Use a formal register."
@@ -120,4 +135,74 @@ def build_translation_prompt(text: str, options: TranslateOptions) -> str:
         f"Translate the following text from {options.source_lang} to {options.target_lang}."
         f"{register} Output only the translation, with no preamble or quotes."
         f"{ctx}\n\n{text}"
+    )
+
+
+# ISO 639-1 → English language name. Used to render the instruction-tuned prompt
+# (the published model card names the languages). Region subtags are stripped;
+# unknown codes fall back to the code itself.
+LANGUAGE_NAMES: dict[str, str] = {
+    "en": "English",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "ru": "Russian",
+    "uk": "Ukrainian",
+    "sv": "Swedish",
+    "da": "Danish",
+    "no": "Norwegian",
+    "nb": "Norwegian",
+    "fi": "Finnish",
+    "cs": "Czech",
+    "sk": "Slovak",
+    "sl": "Slovenian",
+    "el": "Greek",
+    "hu": "Hungarian",
+    "ro": "Romanian",
+    "bg": "Bulgarian",
+    "hr": "Croatian",
+    "sr": "Serbian",
+    "et": "Estonian",
+    "lv": "Latvian",
+    "lt": "Lithuanian",
+    "ga": "Irish",
+    "mt": "Maltese",
+    "is": "Icelandic",
+    "tr": "Turkish",
+    "ca": "Catalan",
+    "ja": "Japanese",
+    "zh": "Chinese",
+    "ko": "Korean",
+    "ar": "Arabic",
+    "hi": "Hindi",
+}
+
+
+def language_name(code: str) -> str:
+    """English name for an ISO 639-1 code (region subtag ignored); falls back to
+    the code so an unmapped language still produces a usable prompt."""
+    return LANGUAGE_NAMES.get(code.split("-")[0].lower(), code)
+
+
+def build_instruction_tuned_prompt(text: str, options: TranslateOptions) -> str:
+    """The instruction-tuned TranslateGemma translation prompt, verbatim from the
+    published model card. Used by backends whose chat template does NOT build the
+    translation instruction itself (e.g. Ollama's standard Gemma template). The
+    rich llama.cpp GGUF template renders an equivalent prompt from structured
+    content, so ``LocalInstructionTunedProvider`` does not use this.
+    """
+    src = options.source_lang or ""
+    s_name = language_name(src)
+    t_name = language_name(options.target_lang)
+    return (
+        f"You are a professional {s_name} ({src}) to {t_name} ({options.target_lang}) "
+        f"translator. Your goal is to accurately convey the meaning and nuances of the "
+        f"original {s_name} text while adhering to {t_name} grammar, vocabulary, and "
+        f"cultural sensitivities.\n"
+        f"Produce only the {t_name} translation, without any additional explanations or "
+        f"commentary. Please translate the following {s_name} text into {t_name}:\n\n\n{text}"
     )

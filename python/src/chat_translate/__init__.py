@@ -24,12 +24,17 @@ from .fanout import (
     create_room_translator,
 )
 from .masking import (
+    BRACKET_SENTINELS,
     DEFAULT_RULES,
+    DEFAULT_SENTINELS,
     MaskedMessage,
     MaskRule,
+    Sentinels,
+    make_sentinels,
     mask_non_translatable,
 )
 from .provider import (
+    LANGUAGE_NAMES,
     BaseTranslationProvider,
     DeepLConfig,
     DeepLProvider,
@@ -38,6 +43,7 @@ from .provider import (
     LanguageCode,
     LlamaLike,
     LocalGGUFProvider,
+    LocalInstructionTunedProvider,
     OllamaConfig,
     OllamaProvider,
     ProviderCapabilities,
@@ -46,9 +52,11 @@ from .provider import (
     TranslateResult,
     TranslationError,
     TranslationProvider,
+    build_instruction_tuned_prompt,
     build_translation_prompt,
     config_from_env,
     create_provider,
+    language_name,
 )
 from .resolve_source import (
     DEFAULT_SHORT_TEXT_LETTERS,
@@ -68,9 +76,12 @@ from .resolve_source import (
 __version__ = "0.1.0"
 
 __all__ = [
+    "BRACKET_SENTINELS",
     "DEFAULT_RULES",
+    "DEFAULT_SENTINELS",
     "DEFAULT_SHORT_TEXT_LETTERS",
     "DEFAULT_SHORT_TEXT_POLICY",
+    "LANGUAGE_NAMES",
     "BaseTranslationProvider",
     "CachedTranslation",
     "ChatTranslator",
@@ -86,6 +97,7 @@ __all__ = [
     "LanguageDetector",
     "LlamaLike",
     "LocalGGUFProvider",
+    "LocalInstructionTunedProvider",
     "MaskRule",
     "MaskedMessage",
     "OllamaConfig",
@@ -95,6 +107,7 @@ __all__ = [
     "ResolveSourceOptions",
     "ResolvedSource",
     "RoomStats",
+    "Sentinels",
     "RoomTranslation",
     "RoomTranslator",
     "ShortTextPolicy",
@@ -106,6 +119,7 @@ __all__ = [
     "TranslationProvider",
     "ViewerTranslateOptions",
     "ViewerTranslation",
+    "build_instruction_tuned_prompt",
     "build_translation_prompt",
     "config_from_env",
     "create_chat_translator",
@@ -113,7 +127,9 @@ __all__ = [
     "create_room_translator",
     "eld_detector",
     "eld_language_detector",
+    "language_name",
     "letter_count",
+    "make_sentinels",
     "mask_non_translatable",
     "resolve_source",
     "to_language_detector",

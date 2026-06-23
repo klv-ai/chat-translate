@@ -6,13 +6,14 @@ from dataclasses import dataclass
 
 import httpx
 
+from ..masking import BRACKET_SENTINELS, Sentinels
 from .base import (
     BaseTranslationProvider,
     ProviderCapabilities,
     TranslateOptions,
     TranslateResult,
     TranslationError,
-    build_translation_prompt,
+    build_instruction_tuned_prompt,
 )
 
 
@@ -40,12 +41,18 @@ class OllamaProvider(BaseTranslationProvider):
         self._model = cfg.model
         self._client = client or httpx.Client(timeout=60.0)
 
+    @property
+    def sentinels(self) -> Sentinels:
+        # Same reasoning as the GGUF backend: an LLM tokenizer drops PUA code
+        # points, so use the visible bracket scheme.
+        return BRACKET_SENTINELS
+
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             auto_detect_source=False,
             formality=False,  # best-effort prompt hint only; not dependable
             glossaries=False,
-            context_hint=True,  # prior messages go in the prompt
+            context_hint=False,  # the instruction-tuned prompt has no context slot
             native_batch=False,  # Ollama is one-shot; the base class loops
         )
 
@@ -55,7 +62,9 @@ class OllamaProvider(BaseTranslationProvider):
                 "ollama provider requires an explicit source_lang (no auto-detect)",
                 self.name,
             )
-        prompt = build_translation_prompt(text, options)
+        # Ollama's standard Gemma template just wraps the message, so we supply
+        # the full instruction-tuned prompt (the model card format) as content.
+        prompt = build_instruction_tuned_prompt(text, options)
         try:
             res = self._client.post(
                 f"{self._host}/api/chat",

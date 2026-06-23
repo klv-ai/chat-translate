@@ -11,7 +11,7 @@ import httpx
 
 from .base import TranslationProvider
 from .deepl import DeepLConfig, DeepLProvider
-from .local import LlamaLike, LocalGGUFProvider
+from .local import LlamaLike, LocalInstructionTunedProvider
 from .ollama import OllamaConfig, OllamaProvider
 
 ProviderName = Literal["deepl", "local", "ollama"]
@@ -38,7 +38,9 @@ def create_provider(
             raise ValueError("deepl provider selected but no api_key configured")
         return DeepLProvider(config.deepl, client=client)
     if config.provider == "local":
-        return LocalGGUFProvider(llama=llama, model_path=config.local_model_path)
+        # The SDK targets instruction-tuned TranslateGemma GGUFs, whose rich chat
+        # template needs structured content (see LocalInstructionTunedProvider).
+        return LocalInstructionTunedProvider(llama=llama, model_path=config.local_model_path)
     if config.provider == "ollama":
         return OllamaProvider(config.ollama, client=client)
     raise ValueError(f"unknown translation provider: {config.provider!r}")

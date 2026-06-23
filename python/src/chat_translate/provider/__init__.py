@@ -5,6 +5,7 @@ import X`` (and the internal ``from .provider import X``) keep working."""
 from __future__ import annotations
 
 from .base import (
+    LANGUAGE_NAMES,
     BaseTranslationProvider,
     Formality,
     LanguageCode,
@@ -13,7 +14,9 @@ from .base import (
     TranslateResult,
     TranslationError,
     TranslationProvider,
+    build_instruction_tuned_prompt,
     build_translation_prompt,
+    language_name,
 )
 from .deepl import DeepLConfig, DeepLProvider
 from .factory import (
@@ -22,10 +25,11 @@ from .factory import (
     config_from_env,
     create_provider,
 )
-from .local import LlamaLike, LocalGGUFProvider
+from .local import LlamaLike, LocalGGUFProvider, LocalInstructionTunedProvider
 from .ollama import OllamaConfig, OllamaProvider
 
 __all__ = [
+    "LANGUAGE_NAMES",
     "BaseTranslationProvider",
     "DeepLConfig",
     "DeepLProvider",
@@ -34,6 +38,7 @@ __all__ = [
     "LanguageCode",
     "LlamaLike",
     "LocalGGUFProvider",
+    "LocalInstructionTunedProvider",
     "OllamaConfig",
     "OllamaProvider",
     "ProviderCapabilities",
@@ -42,7 +47,9 @@ __all__ = [
     "TranslateResult",
     "TranslationError",
     "TranslationProvider",
+    "build_instruction_tuned_prompt",
     "build_translation_prompt",
     "config_from_env",
     "create_provider",
+    "language_name",
 ]

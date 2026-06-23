@@ -5,6 +5,7 @@ A standalone, pip-installable **chat translation SDK** — the Python port of [`
 Provider-agnostic behind one interface:
 - **DeepL** (managed, via `httpx`)
 - **Local GGUF** (self-hosted, via `llama-cpp-python`, reading a model from [`../model_files`](../model_files))
+- **Ollama** (self-hosted, via the Ollama HTTP API — `httpx`, no extra dependency)
 
 Unlike the TS SDK (which injected its detector), this package **bundles** the [ELD](https://pypi.org/project/eld/) language detector and `regex`, so a single install gives a working, offline-capable SDK.
 
@@ -55,9 +56,11 @@ The local backend can't auto-detect a source language, so a detector is **requir
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `TRANSLATION_PROVIDER` | `deepl` | `deepl` \| `local` |
+| `TRANSLATION_PROVIDER` | `deepl` | `deepl` \| `local` \| `ollama` |
 | `DEEPL_API_KEY` | – | required for DeepL; `:fx` suffix → free host |
 | `MODEL_PATH` | – | path to a `.gguf` (under `model_files/`) for the local provider |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama daemon for the `ollama` provider |
+| `OLLAMA_MODEL` | `translategemma:4b` | model tag the Ollama provider requests |
 
 ## Develop
 

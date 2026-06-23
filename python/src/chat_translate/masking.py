@@ -1,8 +1,14 @@
 r"""Do-not-translate masking.
 
 @mentions, emails, URLs, #channels, emoji, and code are replaced with opaque
-Private-Use-Area sentinels, translated around, and restored verbatim. Naive
-translation mangles all of these.
+sentinels, translated around, and restored verbatim. Naive translation mangles
+all of these.
+
+The sentinel *delimiters* are a per-provider concern (see ``Sentinels``): the
+default Private-Use-Area scheme survives NMT engines (DeepL) almost perfectly,
+but instruction-tuned LLM tokenizers (TranslateGemma) drop PUA code points, so
+those providers override to a visible bracket scheme. The choice rides on the
+``MaskedMessage`` so ``restore`` always matches how the text was masked.
 
 Uses the third-party ``regex`` module (not stdlib ``re``) because the emoji
 rules need Unicode properties like ``\p{Extended_Pictographic}``.
@@ -15,15 +21,43 @@ from dataclasses import dataclass, field
 
 import regex as re
 
-# Private Use Area sentinels — they virtually never appear in real chat text.
-# Spelled with chr() so the source stays pure ASCII (no invisible characters).
-SENTINEL_OPEN = chr(0xE000)
-SENTINEL_CLOSE = chr(0xE001)
 
-_STRIP_SENTINELS = re.compile(f"[{SENTINEL_OPEN}{SENTINEL_CLOSE}]")
-#: Matches a masked token: <PUA-open><id><PUA-close>. Exposed for the chat /
-#: fan-out layers to strip or detect placeholders.
-PLACEHOLDER_RE = re.compile(SENTINEL_OPEN + r"(\d+)" + SENTINEL_CLOSE)
+@dataclass(frozen=True, slots=True)
+class Sentinels:
+    """A placeholder delimiter scheme: ``<open><id><close>`` plus the compiled
+    regexes derived from it. Build via :func:`make_sentinels`."""
+
+    open: str
+    close: str
+    placeholder_re: re.Pattern[str]
+    strip_re: re.Pattern[str]
+
+
+def make_sentinels(open_: str, close_: str) -> Sentinels:
+    return Sentinels(
+        open=open_,
+        close=close_,
+        placeholder_re=re.compile(re.escape(open_) + r"(\d+)" + re.escape(close_)),
+        strip_re=re.compile("[" + re.escape(open_) + re.escape(close_) + "]"),
+    )
+
+
+# Default: Private-Use-Area code points. Invisible, virtually never typed, and
+# preserved ~100% by NMT engines (DeepL). Spelled with chr() to keep the source
+# pure ASCII. This is the broad-base default; providers may override.
+DEFAULT_SENTINELS = make_sentinels(chr(0xE000), chr(0xE001))
+
+# Override for instruction-tuned LLM backends: mathematical white square
+# brackets (U+27E6 ⟦ / U+27E7 ⟧). Still vanishingly rare in chat, but — unlike
+# PUA — they survive TranslateGemma's tokenizer instead of being silently eaten.
+BRACKET_SENTINELS = make_sentinels(chr(0x27E6), chr(0x27E7))
+
+# Back-compat module-level aliases (the default scheme).
+SENTINEL_OPEN = DEFAULT_SENTINELS.open
+SENTINEL_CLOSE = DEFAULT_SENTINELS.close
+#: Matches a masked token in the DEFAULT scheme. Per-message logic should prefer
+#: ``MaskedMessage`` helpers, which use that message's own scheme.
+PLACEHOLDER_RE = DEFAULT_SENTINELS.placeholder_re
 
 # Emoji pattern: keep the \p{...} property tokens as regex syntax, but spell the
 # code-point ranges with real characters via chr() so we don't depend on the
@@ -69,6 +103,9 @@ DEFAULT_RULES: tuple[MaskRule, ...] = (
 class MaskedMessage:
     #: Text with non-translatable spans replaced by sentinels.
     masked: str
+    #: The delimiter scheme used — restore/find_unrestored key off this so they
+    #: always match how this message was masked.
+    sentinels: Sentinels = DEFAULT_SENTINELS
     _tokens: list[str] = field(default_factory=list)
 
     @property
@@ -82,21 +119,37 @@ class MaskedMessage:
             i = int(m.group(1))
             return self._tokens[i] if 0 <= i < len(self._tokens) else ""
 
-        restored: str = PLACEHOLDER_RE.sub(_sub, translated)
+        restored: str = self.sentinels.placeholder_re.sub(_sub, translated)
         return restored
 
     def find_unrestored(self, translated: str) -> list[int]:
         """Token ids that did NOT survive translation (should be empty)."""
-        seen = {int(m.group(1)) for m in PLACEHOLDER_RE.finditer(translated)}
+        seen = {int(m.group(1)) for m in self.sentinels.placeholder_re.finditer(translated)}
         return [i for i in range(len(self._tokens)) if i not in seen]
 
+    def has_translatable(self) -> bool:
+        """False when the message is pure placeholders (emoji / mention / url /
+        code) with nothing left to translate."""
+        stripped: str = self.sentinels.placeholder_re.sub("", self.masked)
+        return stripped.strip() != ""
 
-def mask_non_translatable(raw: str, rules: Sequence[MaskRule] = DEFAULT_RULES) -> MaskedMessage:
-    """Pure, provider-independent, and cheap. Call it once per message — the
-    fan-out layer reuses the single masked form across every target language and
-    only re-runs ``restore`` per viewer."""
+    def detection_text(self) -> str:
+        """Masked text with placeholders blanked to spaces — the input to
+        language detection (sentinels would otherwise skew short messages)."""
+        blanked: str = self.sentinels.placeholder_re.sub(" ", self.masked)
+        return blanked
+
+
+def mask_non_translatable(
+    raw: str,
+    rules: Sequence[MaskRule] = DEFAULT_RULES,
+    sentinels: Sentinels = DEFAULT_SENTINELS,
+) -> MaskedMessage:
+    """Pure, cheap, and parametrised by the delimiter scheme. Call it once per
+    message — the fan-out layer reuses the single masked form across every target
+    language and only re-runs ``restore`` per viewer."""
     # Defensive: drop any pre-existing sentinels so user input can't collide.
-    work = _STRIP_SENTINELS.sub("", raw)
+    work = sentinels.strip_re.sub("", raw)
     tokens: list[str] = []
 
     for rule in rules:
@@ -111,8 +164,8 @@ def mask_non_translatable(raw: str, rules: Sequence[MaskRule] = DEFAULT_RULES) -
                     value = value[: -len(tail)]
             idx = len(tokens)
             tokens.append(value)
-            return f"{SENTINEL_OPEN}{idx}{SENTINEL_CLOSE}{tail}"
+            return f"{sentinels.open}{idx}{sentinels.close}{tail}"
 
         work = rule.pattern.sub(_replace, work)
 
-    return MaskedMessage(masked=work, _tokens=tokens)
+    return MaskedMessage(masked=work, sentinels=sentinels, _tokens=tokens)

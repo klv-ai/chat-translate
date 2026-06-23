@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .chat import LanguageDetector, ViewerTranslateOptions, ViewerTranslation, _same_lang
-from .masking import DEFAULT_RULES, PLACEHOLDER_RE, MaskRule, mask_non_translatable
+from .masking import DEFAULT_RULES, MaskRule, mask_non_translatable
 from .provider import (
     Formality,
     LanguageCode,
@@ -158,13 +158,13 @@ class RoomTranslator:
         opts: ViewerTranslateOptions | None = None,
     ) -> RoomTranslation:
         opts = opts or ViewerTranslateOptions()
-        m = mask_non_translatable(raw, self._rules)
+        m = mask_non_translatable(raw, self._rules, self._provider.sentinels)
         targets = list(dict.fromkeys(viewed_languages))  # distinct, order-preserving
         by_language: dict[LanguageCode, ViewerTranslation] = {}
         stats = RoomStats(targets=len(targets))
 
         # Short-circuit A: nothing translatable (pure emoji / mention / code / url).
-        if PLACEHOLDER_RE.sub("", m.masked).strip() == "":
+        if not m.has_translatable():
             for t in targets:
                 by_language[t] = ViewerTranslation(
                     text=raw, detected_source_lang=opts.source_lang or t, translated=False
@@ -176,7 +176,7 @@ class RoomTranslator:
                 stats=stats,
             )
 
-        detect_input = PLACEHOLDER_RE.sub(" ", m.masked)
+        detect_input = m.detection_text()
         source_lang = self._resolve_source(detect_input, opts.source_lang)
         detected_source_lang = source_lang or ""
         formality: Formality | None = (

@@ -8,9 +8,12 @@ import httpx
 import pytest
 
 from chat_translate import (
+    BRACKET_SENTINELS,
+    DEFAULT_SENTINELS,
     DeepLConfig,
     DeepLProvider,
     LocalGGUFProvider,
+    LocalInstructionTunedProvider,
     OllamaConfig,
     OllamaProvider,
     TranslateOptions,
@@ -108,6 +111,60 @@ def test_local_gguf_requires_llama_or_model_path() -> None:
         LocalGGUFProvider()
 
 
+# ─────────── Local instruction-tuned GGUF (structured chat content) ──────────
+
+
+class _FakeStructLlama:
+    """Captures the (structured) messages the IT provider sends."""
+
+    def __init__(self) -> None:
+        self.messages: list[Any] = []
+
+    def create_chat_completion(self, *, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        self.messages.append(messages)
+        return {"choices": [{"message": {"content": "hallo welt"}}]}
+
+
+def test_local_it_requires_source_lang() -> None:
+    p = LocalInstructionTunedProvider(llama=_FakeStructLlama())
+    with pytest.raises(TranslationError):
+        p.translate("hello", TranslateOptions(target_lang="de"))
+
+
+def test_local_it_sends_structured_content() -> None:
+    fake = _FakeStructLlama()
+    p = LocalInstructionTunedProvider(llama=fake)
+    r = p.translate("hello world", TranslateOptions(target_lang="de", source_lang="en"))
+
+    assert r.text == "hallo welt"
+    assert r.detected_source_lang == "en"
+    # The IT template needs structured content, not a flat prompt string.
+    item = fake.messages[0][0]["content"][0]
+    assert item == {
+        "type": "text",
+        "source_lang_code": "en",
+        "target_lang_code": "de",
+        "text": "hello world",
+    }
+
+
+def test_local_it_requires_llama_or_model_path() -> None:
+    with pytest.raises(TranslationError):
+        LocalInstructionTunedProvider()
+
+
+# ─────────────────────────── Per-provider sentinels ─────────────────────────
+
+
+def test_provider_sentinel_schemes() -> None:
+    # NMT default keeps the Private-Use-Area scheme; the LLM backends override to
+    # the bracket scheme their tokenizers preserve.
+    assert DeepLProvider(DeepLConfig(api_key="k")).sentinels is DEFAULT_SENTINELS
+    assert LocalInstructionTunedProvider(llama=_FakeStructLlama()).sentinels is BRACKET_SENTINELS
+    assert LocalGGUFProvider(llama=_FakeLlama()).sentinels is BRACKET_SENTINELS
+    assert OllamaProvider().sentinels is BRACKET_SENTINELS
+
+
 # ───────────────────────────── Ollama (mocked httpx) ─────────────────────────
 
 
@@ -136,7 +193,11 @@ def test_ollama_posts_chat_and_parses_content() -> None:
     assert seen["url"] == "http://ollama:11434/api/chat"
     assert seen["body"]["model"] == "translategemma:4b"
     assert seen["body"]["stream"] is False
-    assert "from en to de" in seen["body"]["messages"][0]["content"]
+    # Ollama gets the full instruction-tuned (model card) prompt as content.
+    content = seen["body"]["messages"][0]["content"]
+    assert "English (en)" in content
+    assert "German (de)" in content
+    assert "Please translate the following English text into German" in content
 
 
 def test_ollama_5xx_is_retryable() -> None:

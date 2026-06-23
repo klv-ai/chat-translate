@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from .masking import DEFAULT_RULES, PLACEHOLDER_RE, MaskedMessage, MaskRule, mask_non_translatable
+from .masking import DEFAULT_RULES, MaskedMessage, MaskRule, mask_non_translatable
 from .provider import (
     Formality,
     LanguageCode,
@@ -72,7 +72,7 @@ class ChatTranslator:
 
     def mask(self, raw: str) -> MaskedMessage:
         """Exposed so the fan-out layer can mask once and reuse across viewers."""
-        return mask_non_translatable(raw, self._rules)
+        return mask_non_translatable(raw, self._rules, self._provider.sentinels)
 
     def _resolve_source(
         self, detect_input: str, explicit: LanguageCode | None = None
@@ -95,17 +95,17 @@ class ChatTranslator:
         opts: ViewerTranslateOptions | None = None,
     ) -> ViewerTranslation:
         opts = opts or ViewerTranslateOptions()
-        m = mask_non_translatable(raw, self._rules)
+        m = mask_non_translatable(raw, self._rules, self._provider.sentinels)
 
         # Short-circuit 1: nothing translatable (pure emoji / mention / code / url).
-        if PLACEHOLDER_RE.sub("", m.masked).strip() == "":
+        if not m.has_translatable():
             return ViewerTranslation(
                 text=raw,
                 detected_source_lang=opts.source_lang or target_lang,
                 translated=False,
             )
 
-        detect_input = PLACEHOLDER_RE.sub(" ", m.masked)
+        detect_input = m.detection_text()
         source_lang = self._resolve_source(detect_input, opts.source_lang)
 
         # Short-circuit 2: the viewer already speaks the source language.

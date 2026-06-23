@@ -11,6 +11,8 @@ from chat_translate import (
     DeepLConfig,
     DeepLProvider,
     LocalGGUFProvider,
+    OllamaConfig,
+    OllamaProvider,
     TranslateOptions,
     TranslationError,
 )
@@ -104,3 +106,61 @@ def test_local_gguf_builds_prompt_and_returns_text() -> None:
 def test_local_gguf_requires_llama_or_model_path() -> None:
     with pytest.raises(TranslationError):
         LocalGGUFProvider()
+
+
+# ───────────────────────────── Ollama (mocked httpx) ─────────────────────────
+
+
+def test_ollama_requires_source_lang() -> None:
+    p = OllamaProvider(client=_client(lambda _r: httpx.Response(200, json={})))
+    with pytest.raises(TranslationError):
+        p.translate("hello", TranslateOptions(target_lang="de"))
+
+
+def test_ollama_posts_chat_and_parses_content() -> None:
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"message": {"role": "assistant", "content": "hallo welt"}})
+
+    p = OllamaProvider(
+        OllamaConfig(host="http://ollama:11434", model="translategemma:4b"),
+        client=_client(handler),
+    )
+    r = p.translate("hello world", TranslateOptions(target_lang="de", source_lang="en"))
+
+    assert r.text == "hallo welt"
+    assert r.detected_source_lang == "en"
+    assert seen["url"] == "http://ollama:11434/api/chat"
+    assert seen["body"]["model"] == "translategemma:4b"
+    assert seen["body"]["stream"] is False
+    assert "from en to de" in seen["body"]["messages"][0]["content"]
+
+
+def test_ollama_5xx_is_retryable() -> None:
+    p = OllamaProvider(client=_client(lambda _r: httpx.Response(500, text="boom")))
+    with pytest.raises(TranslationError) as ei:
+        p.translate("x", TranslateOptions(target_lang="de", source_lang="en"))
+    assert ei.value.provider == "ollama"
+    assert ei.value.retryable is True
+
+
+def test_ollama_health_check_matches_model() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/tags"
+        return httpx.Response(
+            200, json={"models": [{"name": "translategemma:4b"}, {"name": "llama3"}]}
+        )
+
+    assert (
+        OllamaProvider(
+            OllamaConfig(model="translategemma:4b"), client=_client(handler)
+        ).health_check()
+        is True
+    )
+    assert (
+        OllamaProvider(OllamaConfig(model="not-pulled"), client=_client(handler)).health_check()
+        is False
+    )

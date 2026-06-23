@@ -99,7 +99,7 @@ The eval harness and capture logger stay SDK-only and are **not** exposed over H
 | `TRANSLATION_PROVIDER` | `deepl` | `deepl` \| `translategemma` |
 | `DEEPL_API_KEY` | – | required for DeepL; `:fx` suffix → free host |
 | `OLLAMA_HOST` | `http://localhost:11434` | TranslateGemma backend |
-| `TRANSLATEGEMMA_MODEL` | `translategemma:4b` | |
+| `OLLAMA_MODEL` | `translategemma:4b` | |
 | `HOST` / `PORT` | `0.0.0.0` / `8080` | |
 | `DEFAULT_UI_LANG` | `en` | detector fallback when ELD has no opinion |
 | `DETECTOR_SUBSET` | – | ISO 639-1, comma-separated; constrains the detector |

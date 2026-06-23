@@ -381,7 +381,7 @@ export function configFromEnv(
     deepl: { apiKey: env.DEEPL_API_KEY ?? '' },
     translategemma: {
       host: env.OLLAMA_HOST,
-      model: env.TRANSLATEGEMMA_MODEL,
+      model: env.OLLAMA_MODEL,
     },
   };
 }

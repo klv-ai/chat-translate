@@ -51,6 +51,7 @@ import {
 } from './chat-translation-layer';
 import {
   BaseTranslationProvider,
+  buildInstructionTunedPrompt,
   type Formality,
   type LanguageCode,
   type ProviderCapabilities,
@@ -79,23 +80,11 @@ export interface LlamaCppConfig {
   quantLabel?: string;
 }
 
-/** Shared with the Ollama provider's intent — align with the model card. */
-function buildGemmaPrompt(text: string, o: TranslateOptions): string {
-  const register =
-    o.formality === 'more' || o.formality === 'prefer_more'
-      ? ' Use a formal register.'
-      : o.formality === 'less' || o.formality === 'prefer_less'
-        ? ' Use an informal register.'
-        : '';
-  const ctx = o.context
-    ? `\nConversation context (for disambiguation only, do not translate):\n${o.context}\n`
-    : '';
-  return (
-    `Translate the following text from ${o.sourceLang} to ${o.targetLang}.` +
-    `${register} Output only the translation, with no preamble or quotes.` +
-    `${ctx}\n\n${text}`
-  );
-}
+/**
+ * The same model-card prompt the Ollama provider uses. An eval that prompts the
+ * GGUF differently from production would rank a model you are not shipping.
+ */
+const buildGemmaPrompt = buildInstructionTunedPrompt;
 
 export class LlamaCppTranslateGemmaProvider extends BaseTranslationProvider {
   readonly name: string;

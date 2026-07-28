@@ -188,6 +188,47 @@ def language_name(code: str) -> str:
     return LANGUAGE_NAMES.get(code.split("-")[0].lower(), code)
 
 
+def build_ui_label_prompt(text: str, options: TranslateOptions) -> str:
+    """Translation prompt for UI strings rather than prose.
+
+    The model-card prompt asks for a faithful rendering of *text*, and for a
+    bare label with no surrounding context TranslateGemma answers the way a
+    dictionary would — every sense, on its own line, with a parenthetical
+    caveat. "Flagged" comes back as "Marcado. / Señalizado. / Identificado. /
+    (Dependiendo del contexto...)", which then renders as a paragraph inside a
+    button.
+
+    Naming the register — this is a control in a user interface, give exactly
+    one short answer — collapses that to a single usable string. Measured on
+    translategemma:12b against the labels that failed in production.
+    """
+    src = options.source_lang or ""
+    s_name = language_name(src)
+    t_name = language_name(options.target_lang)
+    return (
+        f"You are a professional {s_name} ({src}) to {t_name} "
+        f"({options.target_lang}) translator localizing a software user "
+        f"interface. The text is a button, menu item, or label. Give exactly "
+        f"ONE translation — the single best fit for a UI control — with no "
+        f"alternatives, no explanations, and no commentary. Keep it as short "
+        f"as the original.\n"
+        # Only mention placeholders when there ARE some. The instruction has to
+        # show the delimiters to be understood, and a model given that example
+        # alongside a string with no placeholders copies the EXAMPLE into its
+        # answer — "Data from" came back as "Daten von ⟦…⟧". That cost ~60 keys
+        # per locale, far more than the instruction saves.
+        + (
+            f"Any {chr(0x27E6)}…{chr(0x27E7)} token is a placeholder: copy each "
+            f"one into your translation exactly as it appears, unchanged, and "
+            f"never drop or renumber one.\n"
+            if chr(0x27E6) in text
+            else ""
+        )
+        + f"Please translate the following {s_name} text into {t_name}:"
+        f"\n\n\n{text}"
+    )
+
+
 def build_instruction_tuned_prompt(text: str, options: TranslateOptions) -> str:
     """The instruction-tuned TranslateGemma translation prompt, verbatim from the
     published model card. Used by backends whose chat template does NOT build the

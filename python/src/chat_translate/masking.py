@@ -34,11 +34,15 @@ class Sentinels:
 
 
 def make_sentinels(open_: str, close_: str) -> Sentinels:
+    # `strip_re` is an ALTERNATION, not a character class. A class only works
+    # while both delimiters are single characters — with a word-like scheme
+    # ("ZQ"/"QZ") it would degrade to "any of Z, Q" and strip those letters out
+    # of ordinary copy.
     return Sentinels(
         open=open_,
         close=close_,
         placeholder_re=re.compile(re.escape(open_) + r"(\d+)" + re.escape(close_)),
-        strip_re=re.compile("[" + re.escape(open_) + re.escape(close_) + "]"),
+        strip_re=re.compile(re.escape(open_) + "|" + re.escape(close_)),
     )
 
 
@@ -51,6 +55,15 @@ DEFAULT_SENTINELS = make_sentinels(chr(0xE000), chr(0xE001))
 # brackets (U+27E6 ⟦ / U+27E7 ⟧). Still vanishingly rare in chat, but — unlike
 # PUA — they survive TranslateGemma's tokenizer instead of being silently eaten.
 BRACKET_SENTINELS = make_sentinels(chr(0x27E6), chr(0x27E7))
+
+# Surviving the tokenizer is not the same as surviving TRANSLATION. Measured on
+# translategemma:12b, a bracketed bare index reads to the model as a number and
+# is translated as one: "⟦0⟧% match" comes back "0% de coincidencia", and
+# "Ask ⟦0⟧" simply loses it. Prefixing the index makes the token read as an
+# opaque name and it is copied through instead — 6/6 on cases where the bare
+# form scored 0/6. Used for UI catalogs, where placeholders carry values a user
+# will see; the chat rules above are unaffected.
+LLM_SENTINELS = make_sentinels(chr(0x27E6) + "PH", chr(0x27E7))
 
 # Back-compat module-level aliases (the default scheme).
 SENTINEL_OPEN = DEFAULT_SENTINELS.open

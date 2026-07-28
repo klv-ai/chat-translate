@@ -234,6 +234,84 @@ export interface TranslateGemmaConfig {
   model?: string;
 }
 
+/**
+ * ISO 639-1 -> English language name. The instruction-tuned TranslateGemma
+ * prompt names the languages in prose ("a professional English (en) to German
+ * (de) translator"), so a code alone will not do. Region subtags are ignored;
+ * an unmapped code falls back to itself, which still yields a usable prompt.
+ *
+ * Kept in sync with `LANGUAGE_NAMES` in the Python package.
+ */
+export const LANGUAGE_NAMES: Record<string, string> = {
+  en: 'English',
+  fr: 'French',
+  de: 'German',
+  es: 'Spanish',
+  it: 'Italian',
+  pt: 'Portuguese',
+  nl: 'Dutch',
+  pl: 'Polish',
+  ru: 'Russian',
+  uk: 'Ukrainian',
+  sv: 'Swedish',
+  da: 'Danish',
+  no: 'Norwegian',
+  nb: 'Norwegian',
+  fi: 'Finnish',
+  cs: 'Czech',
+  sk: 'Slovak',
+  sl: 'Slovenian',
+  el: 'Greek',
+  hu: 'Hungarian',
+  ro: 'Romanian',
+  bg: 'Bulgarian',
+  hr: 'Croatian',
+  sr: 'Serbian',
+  et: 'Estonian',
+  lv: 'Latvian',
+  lt: 'Lithuanian',
+  ga: 'Irish',
+  mt: 'Maltese',
+  is: 'Icelandic',
+  tr: 'Turkish',
+  ca: 'Catalan',
+  ja: 'Japanese',
+  zh: 'Chinese',
+  ko: 'Korean',
+  ar: 'Arabic',
+  hi: 'Hindi',
+};
+
+/** English name for a language code, region subtag ignored. */
+export function languageName(code: string): string {
+  return LANGUAGE_NAMES[code.split('-')[0]?.toLowerCase() ?? ''] ?? code;
+}
+
+/**
+ * The instruction-tuned TranslateGemma prompt, verbatim from the published
+ * model card. Used by backends whose chat template does NOT build the
+ * translation instruction itself — Ollama's stock Gemma template just wraps the
+ * user message, so the full instruction has to be the message.
+ *
+ * There is deliberately no context or register slot: the model card format has
+ * neither, which is why `TranslateGemmaProvider` reports `contextHint: false`
+ * and `formality: false`. Inventing slots here would make the chat layer build
+ * on sand.
+ */
+export function buildInstructionTunedPrompt(text: string, o: TranslateOptions): string {
+  const src = o.sourceLang ?? '';
+  const sourceName = languageName(src);
+  const targetName = languageName(o.targetLang);
+  return (
+    `You are a professional ${sourceName} (${src}) to ${targetName} (${o.targetLang}) ` +
+    `translator. Your goal is to accurately convey the meaning and nuances of the ` +
+    `original ${sourceName} text while adhering to ${targetName} grammar, vocabulary, and ` +
+    `cultural sensitivities.\n` +
+    `Produce only the ${targetName} translation, without any additional explanations or ` +
+    `commentary. Please translate the following ${sourceName} text into ${targetName}:\n\n\n${text}`
+  );
+}
+
 export class TranslateGemmaProvider extends BaseTranslationProvider {
   readonly name = 'translategemma';
   private readonly host: string;
@@ -254,7 +332,7 @@ export class TranslateGemmaProvider extends BaseTranslationProvider {
       autoDetectSource: false,
       formality: false, // best-effort prompt hint only; not dependable
       glossaries: false, // no grammatical adaptation
-      contextHint: true, // we can put prior messages in the prompt
+      contextHint: false, // the model-card prompt has no context slot
       nativeBatch: false, // Ollama is one-shot; base class loops
     };
   }
@@ -270,7 +348,7 @@ export class TranslateGemmaProvider extends BaseTranslationProvider {
       );
     }
 
-    const prompt = this.buildPrompt(text, options);
+    const prompt = buildInstructionTunedPrompt(text, options);
     let res: Response;
     try {
       res = await fetch(`${this.host}/api/chat`, {
@@ -302,29 +380,6 @@ export class TranslateGemmaProvider extends BaseTranslationProvider {
       throw new TranslationError('Empty translation from model', this.name);
     }
     return { text: out, detectedSourceLang: options.sourceLang };
-  }
-
-  /**
-   * TranslateGemma ships with a specific chat template for translation.
-   * Treat this as a PLACEHOLDER and align it with the published model card
-   * before trusting output. The register hint is best-effort only — which is
-   * exactly why capabilities().formality is false.
-   */
-  private buildPrompt(text: string, o: TranslateOptions): string {
-    const register =
-      o.formality === 'more' || o.formality === 'prefer_more'
-        ? ' Use a formal register.'
-        : o.formality === 'less' || o.formality === 'prefer_less'
-          ? ' Use an informal register.'
-          : '';
-    const ctx = o.context
-      ? `\nConversation context (for disambiguation only, do not translate):\n${o.context}\n`
-      : '';
-    return (
-      `Translate the following text from ${o.sourceLang} to ${o.targetLang}.` +
-      `${register} Output only the translation, with no preamble or quotes.` +
-      `${ctx}\n\n${text}`
-    );
   }
 
   async healthCheck(): Promise<boolean> {

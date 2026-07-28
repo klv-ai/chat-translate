@@ -14,6 +14,7 @@ from .base import (
     TranslateResult,
     TranslationError,
     build_instruction_tuned_prompt,
+    build_ui_label_prompt,
 )
 
 
@@ -21,6 +22,23 @@ from .base import (
 class OllamaConfig:
     host: str = "http://localhost:11434"
     model: str = "translategemma:4b"
+    #: Seconds to wait for a completion. The default suits short chat messages;
+    #: a larger model, a cold model load, or a long string needs more, and a
+    #: read timeout surfaces as a retryable TranslationError.
+    timeout_seconds: float = 60.0
+    #: How long Ollama keeps the model resident between requests. Chat traffic is
+    #: bursty and the default 5m is right for it; a batch job is a long sequence
+    #: of short requests, and letting an 8 GB model unload mid-run means paying a
+    #: reload — minutes, on a box under memory pressure — to continue.
+    keep_alive: str = "5m"
+    #: Cap on generated tokens. A translation is about as long as its source, so
+    #: an unbounded budget only buys runaway generation on ambiguous fragments.
+    #: None leaves it to the server.
+    max_output_tokens: int | None = None
+    #: 'prose' (the published model card) or 'ui_label'. Chat is prose; a UI
+    #: catalog is not, and a bare label prompted as prose comes back as a
+    #: dictionary entry. See build_ui_label_prompt.
+    prompt_style: str = "prose"
 
 
 class OllamaProvider(BaseTranslationProvider):
@@ -39,7 +57,10 @@ class OllamaProvider(BaseTranslationProvider):
         cfg = config or OllamaConfig()
         self._host = cfg.host
         self._model = cfg.model
-        self._client = client or httpx.Client(timeout=60.0)
+        self._keep_alive = cfg.keep_alive
+        self._max_output_tokens = cfg.max_output_tokens
+        self._prompt_style = cfg.prompt_style
+        self._client = client or httpx.Client(timeout=cfg.timeout_seconds)
 
     @property
     def sentinels(self) -> Sentinels:
@@ -64,15 +85,24 @@ class OllamaProvider(BaseTranslationProvider):
             )
         # Ollama's standard Gemma template just wraps the message, so we supply
         # the full instruction-tuned prompt (the model card format) as content.
-        prompt = build_instruction_tuned_prompt(text, options)
+        build = (
+            build_ui_label_prompt
+            if self._prompt_style == "ui_label"
+            else build_instruction_tuned_prompt
+        )
+        prompt = build(text, options)
         try:
+            gen_options: dict[str, object] = {"temperature": 0}  # fidelity over flair
+            if self._max_output_tokens is not None:
+                gen_options["num_predict"] = self._max_output_tokens
             res = self._client.post(
                 f"{self._host}/api/chat",
                 json={
                     "model": self._model,
                     "stream": False,
+                    "keep_alive": self._keep_alive,
                     "messages": [{"role": "user", "content": prompt}],
-                    "options": {"temperature": 0},  # fidelity over flair
+                    "options": gen_options,
                 },
             )
         except httpx.HTTPError as exc:

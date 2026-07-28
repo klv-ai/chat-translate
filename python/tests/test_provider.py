@@ -225,3 +225,47 @@ def test_ollama_health_check_matches_model() -> None:
         OllamaProvider(OllamaConfig(model="not-pulled"), client=_client(handler)).health_check()
         is False
     )
+
+
+def test_ollama_holds_the_model_resident_and_caps_output() -> None:
+    """A catalog run is a long sequence of short requests. Letting an 8 GB model
+    unload between them costs a multi-minute reload on a loaded box, and an
+    uncapped budget lets an ambiguous fragment generate until the timeout."""
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, json={"message": {"content": "hola"}})
+
+    provider = OllamaProvider(
+        OllamaConfig(model="translategemma:12b", keep_alive="60m", max_output_tokens=256),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    provider.translate("hi", TranslateOptions(target_lang="es", source_lang="en"))
+
+    assert captured["keep_alive"] == "60m"
+    assert captured["options"] == {"temperature": 0, "num_predict": 256}
+
+
+def test_ui_label_prompt_tells_the_model_to_copy_placeholders() -> None:
+    from chat_translate.provider.base import build_ui_label_prompt
+
+    opts = TranslateOptions(target_lang="es", source_lang="en")
+    prompt = build_ui_label_prompt("⟦PH0⟧/⟦PH1⟧ GB", opts)
+    # A mostly-placeholder string is otherwise answered with just the prose the
+    # model recognises — "⟦PH0⟧/⟦PH1⟧ GB" came back as "GB (página)".
+    assert "placeholder" in prompt
+    assert "exactly as it appears" in prompt
+    assert "ONE translation" in prompt
+
+
+def test_ui_label_prompt_omits_the_placeholder_rule_when_there_are_none() -> None:
+    from chat_translate.provider.base import build_ui_label_prompt
+
+    opts = TranslateOptions(target_lang="de", source_lang="en")
+    # The rule has to show the delimiters to be understood — and a model shown
+    # that example next to a string with no placeholders copies the EXAMPLE
+    # into its answer: "Data from" came back as "Daten von \u27e6...\u27e7".
+    # That cost ~60 keys per locale.
+    assert "placeholder" not in build_ui_label_prompt("Data from", opts)
+    assert "\u27e6" not in build_ui_label_prompt("Data from", opts)

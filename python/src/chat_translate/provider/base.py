@@ -179,6 +179,11 @@ LANGUAGE_NAMES: dict[str, str] = {
     "ko": "Korean",
     "ar": "Arabic",
     "hi": "Hindi",
+    # Low-resource, but TranslateGemma handles it usably and the catalog
+    # verifier keeps English for anything it mangles. Naming it matters:
+    # the fallback prompt would say 'translate to tet', which the model
+    # cannot be trusted to read as Tetum.
+    "tet": "Tetum",
 }
 
 

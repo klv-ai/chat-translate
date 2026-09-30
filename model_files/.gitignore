@@ -1,0 +1,6 @@
+# Model weights are large binaries — keep them out of git, but track the folder.
+*.gguf
+*.bin
+*.safetensors
+!.gitignore
+!.gitkeep

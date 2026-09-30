@@ -1,0 +1,33 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    image: chat-translate-server
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Sensible container defaults; override in .env.
+      HOST: 0.0.0.0
+      PORT: 8080
+    ports:
+      - '${PORT:-8080}:8080'
+    restart: unless-stopped
+
+  # Self-hosted TranslateGemma backend. Started only with:
+  #   docker compose --profile selfhosted up
+  # Then set TRANSLATION_PROVIDER=translategemma and
+  #         OLLAMA_HOST=http://ollama:11434 in .env, and pull the model:
+  #   docker compose exec ollama ollama pull translategemma:4b
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ['selfhosted']
+    ports:
+      - '11434:11434'
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama:

@@ -1,0 +1,76 @@
+{
+  "name": "@chat-translate/sdk",
+  "version": "0.1.0",
+  "description": "Provider-agnostic chat translation SDK (DeepL / self-hosted TranslateGemma): masking, per-room fan-out + cache, ingest source resolution, and eval tooling.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./eval": {
+      "import": {
+        "types": "./dist/eval.d.ts",
+        "default": "./dist/eval.js"
+      }
+    },
+    "./eval/source": {
+      "import": {
+        "types": "./dist/eval-source.d.ts",
+        "default": "./dist/eval-source.js"
+      }
+    },
+    "./logger": {
+      "import": {
+        "types": "./dist/logger.d.ts",
+        "default": "./dist/logger.js"
+      }
+    },
+    "./detector": {
+      "import": {
+        "types": "./dist/detector.d.ts",
+        "default": "./dist/detector.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "eld": "^2.0.0",
+    "pg": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "eld": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
+  }
+}

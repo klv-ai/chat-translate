@@ -1,0 +1,24 @@
+# Root ignores. Language-specific build artifacts also have nested .gitignore
+# files in python/ and ts/.
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors / IDEs
+.idea/
+.vs/
+*.swp
+*~
+
+# VS Code: ignore per-user noise but share the project tooling config.
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# Secrets / local env (keep the example checked in)
+.env
+.env.*
+!.env.example

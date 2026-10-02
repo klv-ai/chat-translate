@@ -332,3 +332,61 @@ def test_tidy_mirrors_leading_case_for_plural_branches() -> None:
     assert tidy("# Files", "# Dateien", "nl-NL") == "# Dateien"
     # No language given: no case mirroring.
     assert tidy("# file", "# Файл") == "# Файл"
+
+
+# ---------------------------------------------------------------------------
+# Stand-in names: the retry for a model that drops a leading sentinel
+# ---------------------------------------------------------------------------
+
+from chat_translate.catalog import from_stand_ins, to_stand_ins  # noqa: E402
+
+
+def test_stand_ins_round_trip() -> None:
+    named, mapping = to_stand_ins("⟦PH0⟧ shared by ⟦PH1⟧")
+    assert named == "Zarvex shared by Quilmor"
+    assert from_stand_ins("Zarvex, compartido por Quilmor.", mapping, "⟦PH0⟧ shared by ⟦PH1⟧") == \
+        "⟦PH0⟧, compartido por ⟦PH1⟧."
+
+
+def test_stand_ins_reject_a_dropped_repeated_or_transliterated_name() -> None:
+    masked = "⟦PH0⟧ installed."
+    _, mapping = to_stand_ins(masked)
+    assert from_stand_ins("Instalado.", mapping, masked) is None
+    assert from_stand_ins("Zarvex instalado, Zarvex.", mapping, masked) is None
+    assert from_stand_ins("ザルベックス インストール済み", mapping, masked) is None
+
+
+def test_stand_ins_reject_a_declined_name_but_not_cjk_or_a_glued_source() -> None:
+    masked = "Connected to ⟦PH0⟧"
+    _, mapping = to_stand_ins(masked)
+    assert from_stand_ins("Подключено к Zarvexу", mapping, masked) is None
+    assert from_stand_ins("Zarvexに接続済み", mapping, masked) == "⟦PH0⟧に接続済み"
+    glued = "⟦PH0⟧d"
+    _, mapping = to_stand_ins(glued)
+    assert from_stand_ins("Zarvexd", mapping, glued) == "⟦PH0⟧d"
+
+
+def test_stand_ins_unusable_without_sentinels_or_when_a_name_is_taken() -> None:
+    assert to_stand_ins("(one per line)") is None
+    assert to_stand_ins("⟦PH0⟧ met Zarvex") is None
+
+
+def test_a_lost_leading_placeholder_is_recovered_with_stand_in_names() -> None:
+    provider = FakeProvider({
+        "⟦PH0⟧ installed.": "Instalado.",          # the sentinel is dropped
+        "Zarvex installed.": "Zarvex instalado.",  # the name is kept
+    })
+    result = translate_catalog(["{language} installed."], provider, "es-ES")
+
+    entry = result.entries[0]
+    assert entry.ok and entry.stand_ins
+    assert entry.value == "{language} instalado."
+    assert result.recovered == [entry]
+
+
+def test_a_failure_the_names_cannot_fix_is_not_retried() -> None:
+    provider = FakeProvider({"Flagged": "Marcado. Señalizado. Identificado. Depende del contexto y del uso."})
+    result = translate_catalog(["Flagged"], provider, "es-ES")
+
+    assert not result.entries[0].ok
+    assert provider.seen == ["Flagged"]  # one call: no stand-in retry

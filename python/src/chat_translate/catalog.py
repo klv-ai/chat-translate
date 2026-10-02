@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from collections.abc import Callable, Iterable, Sequence
@@ -40,7 +41,7 @@ from .icu import (
     selectors_of,
     translate_icu,
 )
-from .masking import Sentinels, make_sentinels
+from .masking import LLM_SENTINELS, Sentinels, make_sentinels
 from .provider.base import TranslateOptions, TranslationError, TranslationProvider
 from .provider.ollama import OllamaConfig, OllamaProvider
 
@@ -180,6 +181,8 @@ class EntryResult:
     error: str | None = None
     #: Non-fatal notes (plural categories the target needs but English lacks).
     notes: list[str] = field(default_factory=list)
+    #: Translated on the stand-in-name retry after the sentinels were lost.
+    stand_ins: bool = False
 
     @property
     def ok(self) -> bool:
@@ -234,6 +237,63 @@ def verify(source: str, translated: str, protected: Sequence[str] = ()) -> str |
     return None
 
 
+# Invented proper names, swapped in for the placeholder sentinels when a model
+# drops those. translategemma:12b discards a LEADING sentinel as noise —
+# "⟦PH0⟧ installed." comes back "Instalado." — which is most of what a catalog
+# run used to leave in English (~13% of every locale). An unknown name is
+# something it copies through and places grammatically: on strings that lost
+# their sentinels, names survived 26/30 across es/ru/ja/de/tet, sentinels 7/30.
+# They are only a retry: the sentinels are proven on everything else, and a
+# name invites the model to treat the value as a noun ("Удалено: Zarvex.").
+STAND_IN_NAMES = (
+    "Zarvex", "Quilmor", "Brennat", "Toskiv", "Varneth", "Oskelyn", "Drumvar", "Pelquist",
+)
+
+# A placeholder-shaped failure — what the stand-in retry can fix
+_PLACEHOLDER_FAILURES = (
+    "placeholders lost",
+    "plural number slots",
+    "a masked placeholder was mangled",
+)
+
+# Letters of the scripts that inflect a noun by suffix. A stand-in that comes
+# back with one glued on ("Zarvexа") was declined, and a value cannot be.
+# CJK text sits directly against a name with no space, so it is not listed.
+_INFLECTION_LETTER = re.compile(r"[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]")
+
+
+def to_stand_ins(masked: str) -> tuple[str, dict[str, str]] | None:
+    """Swap each sentinel in ``masked`` for a stand-in name. Returns the text
+    and a name -> sentinel map, or None when the scheme cannot be used: no
+    sentinels, more of them than names, or a name already in the text."""
+    ids = LLM_SENTINELS.placeholder_re.findall(masked)
+    if not ids or max(int(i) for i in ids) >= len(STAND_IN_NAMES):
+        return None
+    if any(name in masked for name in STAND_IN_NAMES):
+        return None
+    mapping = {
+        STAND_IN_NAMES[int(i)]: f"{LLM_SENTINELS.open}{i}{LLM_SENTINELS.close}" for i in set(ids)
+    }
+    return LLM_SENTINELS.placeholder_re.sub(lambda m: STAND_IN_NAMES[int(m.group(1))], masked), mapping
+
+
+def from_stand_ins(text: str, mapping: dict[str, str], masked: str) -> str | None:
+    """Put the sentinels back. None when a name was dropped, repeated,
+    transliterated or declined — the value it stands for would be wrong."""
+    for name, token in mapping.items():
+        if text.count(name) != masked.count(token):
+            return None
+        for m in re.finditer(re.escape(name), text):
+            after = text[m.end():m.end() + 1]
+            if after and _INFLECTION_LETTER.match(after):
+                # Unless the source glues one on too ("{dims}d")
+                if not re.search(re.escape(token) + re.escape(after), masked):
+                    return None
+    for name, token in mapping.items():
+        text = text.replace(name, token)
+    return text
+
+
 @dataclass(slots=True)
 class CatalogResult:
     entries: list[EntryResult]
@@ -251,6 +311,11 @@ class CatalogResult:
     @property
     def flagged(self) -> list[EntryResult]:
         return [e for e in self.entries if e.notes]
+
+    @property
+    def recovered(self) -> list[EntryResult]:
+        """Entries the stand-in-name retry saved from falling back to English."""
+        return [e for e in self.entries if e.ok and e.stand_ins]
 
 
 def translate_catalog(
@@ -279,7 +344,7 @@ def translate_catalog(
     started = time.monotonic()
     options = TranslateOptions(target_lang=target_lang, source_lang=source_lang)
 
-    def call(source_fragment: str, masked: str) -> str:
+    def call(source_fragment: str, masked: str, stand_ins: bool = False) -> str:
         # Brand names are masked here, not in the ICU layer: they are product
         # vocabulary, not message structure.
         guarded, terms = protect_terms(masked, protected)
@@ -288,10 +353,16 @@ def translate_catalog(
         # answered "Guardar" ("Save"). There is nothing to translate here.
         if terms and not _has_prose_outside(guarded, TERM_SENTINELS):
             return source_fragment
+        named = to_stand_ins(guarded) if stand_ins else None
         last: TranslationError | None = None
         for attempt in range(attempts):
             try:
-                raw = provider.translate(guarded, options).text
+                raw = provider.translate(named[0] if named else guarded, options).text
+                if named:
+                    restored = from_stand_ins(raw, named[1], guarded)
+                    if restored is None:
+                        raise TranslationError("a stand-in name did not come back intact", "catalog")
+                    raw = restored
                 return tidy(source_fragment, restore_terms(raw, terms), target_lang)
             except TranslationError as exc:
                 if not exc.retryable:
@@ -311,10 +382,19 @@ def translate_catalog(
         try:
             candidate = translate_icu(key, call)
             reason = verify(key, candidate, protected)
+            stand_ins = False
+            if reason and reason.startswith(_PLACEHOLDER_FAILURES):
+                # Second chance with names in place of the sentinels it lost
+                try:
+                    retry = translate_icu(key, lambda src, masked: call(src, masked, stand_ins=True))
+                    if verify(key, retry, protected) is None:
+                        candidate, reason, stand_ins = retry, None, True
+                except TranslationError:
+                    pass  # keep the first failure: it says what went wrong
             result = (
                 EntryResult(key=key, value=key, error=reason, notes=notes)
                 if reason
-                else EntryResult(key=key, value=candidate, notes=notes)
+                else EntryResult(key=key, value=candidate, notes=notes, stand_ins=stand_ins)
             )
         except TranslationError as exc:
             result = EntryResult(key=key, value=key, error=str(exc), notes=notes)
@@ -475,6 +555,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         for e in result.failures[:20]:
             print(f"  {e.key[:70]!r}: {e.error}")
+    if result.recovered:
+        print(
+            f"\n{len(result.recovered)} kept their placeholders only on the stand-in-name "
+            f"retry — worth a look in review."
+        )
     if result.flagged:
         print(f"\n{len(result.flagged)} need a plural review for {args.target_lang}:")
         for e in result.flagged[:20]:

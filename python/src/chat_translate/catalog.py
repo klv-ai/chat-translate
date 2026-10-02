@@ -189,6 +189,10 @@ class EntryResult:
         return self.error is None
 
 
+# A placeholder or plural number slot hyphenated onto a word, either side
+_COMPOUND = re.compile(r"(?:\}|#)-[^\W\d_]|[^\W\d_]-(?:\{|#)")
+
+
 def verify(source: str, translated: str, protected: Sequence[str] = ()) -> str | None:
     """Return a reason the translation is unusable, or None if it is sound.
 
@@ -227,6 +231,11 @@ def verify(source: str, translated: str, protected: Sequence[str] = ()) -> str |
     if _looks_like_a_dictionary_entry(source, translated):
         return "reads as a dictionary entry, not a translation"
 
+    if len(_COMPOUND.findall(translated)) > len(_COMPOUND.findall(source)):
+        # "{errors}-Fehler", "#-Dokument": the model treated the value as a
+        # word and compounded it. With the value in, it reads "5-Fehler".
+        return "a placeholder was fused into a compound word"
+
     if has_stray_sentinel(translated):
         # The model rewrote a placeholder sentinel past recognition, so an
         # argument (or the `#` number slot) never made it back in.
@@ -244,7 +253,9 @@ def verify(source: str, translated: str, protected: Sequence[str] = ()) -> str |
 # something it copies through and places grammatically: on strings that lost
 # their sentinels, names survived 26/30 across es/ru/ja/de/tet, sentinels 7/30.
 # They are only a retry: the sentinels are proven on everything else, and a
-# name invites the model to treat the value as a noun ("Удалено: Zarvex.").
+# name invites the model to treat the value as a noun ("Удалено: Zarvex.") —
+# fine for a {name}, wrong for a number, so a plural `#` slot is never named
+# and a compounded placeholder ("{errors}-Fehler") fails verify().
 STAND_IN_NAMES = (
     "Zarvex", "Quilmor", "Brennat", "Toskiv", "Varneth", "Oskelyn", "Drumvar", "Pelquist",
 )
@@ -260,6 +271,16 @@ _PLACEHOLDER_FAILURES = (
 # back with one glued on ("Zarvexа") was declined, and a value cannot be.
 # CJK text sits directly against a name with no space, so it is not listed.
 _INFLECTION_LETTER = re.compile(r"[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]")
+
+
+def _outside_braces(text: str) -> str:
+    """``text`` without its ``{…}`` blocks. A carrier is handed the whole
+    message as its source, so a `#` inside one of its plural arguments is not
+    a slot of the carrier's own."""
+    prev = None
+    while prev != text:
+        prev, text = text, re.sub(r"\{[^{}]*\}", "", text)
+    return text
 
 
 def to_stand_ins(masked: str) -> tuple[str, dict[str, str]] | None:
@@ -353,6 +374,10 @@ def translate_catalog(
         # answered "Guardar" ("Save"). There is nothing to translate here.
         if terms and not _has_prose_outside(guarded, TERM_SENTINELS):
             return source_fragment
+        if stand_ins and "#" in _outside_braces(source_fragment):
+            # A plural branch's number slot. As a name it is treated as a noun
+            # ("#-Zeit", "# 1 Kopie"); the retry is only for named values.
+            raise TranslationError("no stand-in for a plural number slot", "catalog")
         named = to_stand_ins(guarded) if stand_ins else None
         last: TranslationError | None = None
         for attempt in range(attempts):

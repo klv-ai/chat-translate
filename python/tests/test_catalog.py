@@ -390,3 +390,25 @@ def test_a_failure_the_names_cannot_fix_is_not_retried() -> None:
 
     assert not result.entries[0].ok
     assert provider.seen == ["Flagged"]  # one call: no stand-in retry
+
+
+def test_verify_rejects_a_placeholder_fused_into_a_compound() -> None:
+    assert verify("{errors} errors · idle", "{errors}-Fehler · Inaktiv") is not None
+    assert verify(
+        "{count, plural, one {# result} other {# results}}",
+        "{count, plural, one {#-Ergebnis} other {#-Ergebnisse}}",
+    ) is not None
+    # Fine when the source compounds too, or nothing is glued
+    assert verify("{n}-day trial", "{n}-Tage-Test") is None
+    assert verify("{errors} errors", "{errors} Fehler") is None
+
+
+def test_a_plural_number_slot_is_never_retried_with_a_stand_in() -> None:
+    # The leading {name} is dropped, which earns the stand-in retry; the
+    # plural branches inside it must still never see a name for their `#`.
+    provider = FakeProvider({"⟦PH0⟧ has ⟦PH1⟧": "Tiene ⟦PH1⟧", "Zarvex has Quilmor": "Zarvex tiene Quilmor"})
+    result = translate_catalog(["{name} has {count, plural, one {# file} other {# files}}"], provider, "es-ES")
+
+    assert not result.entries[0].ok
+    assert "Zarvex has Quilmor" in provider.seen          # the retry ran
+    assert not any("Zarvex file" in s for s in provider.seen)

@@ -187,9 +187,21 @@ LANGUAGE_NAMES: dict[str, str] = {
 }
 
 
+# Regional variants a translator must not blur into their base language. A bare
+# "Portuguese" prompt comes back Brazilian (the model's dominant Portuguese), so
+# a pt-PT catalog would read "arquivo/time/tela" instead of "ficheiro/equipa/ecrã".
+REGION_NAMES: dict[str, str] = {
+    "pt-pt": "European Portuguese (Portugal, not Brazilian)",
+}
+
+
 def language_name(code: str) -> str:
-    """English name for an ISO 639-1 code (region subtag ignored); falls back to
-    the code so an unmapped language still produces a usable prompt."""
+    """English name for a language code; falls back to the code so an unmapped
+    language still produces a usable prompt. A region subtag is ignored unless
+    it is in REGION_NAMES, where the variant is the whole point."""
+    regional = REGION_NAMES.get(code.replace("_", "-").lower())
+    if regional:
+        return regional
     return LANGUAGE_NAMES.get(code.split("-")[0].lower(), code)
 
 
